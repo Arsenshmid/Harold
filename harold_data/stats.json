@@ -1,15 +1,15 @@
 {
- "total_steps": 37300,
- "train_seconds": 3162.8663177490234,
- "chats": 6,
- "messages": 17,
- "quiz_score": 0.986,
+ "total_steps": 37800,
+ "train_seconds": 3452.061661720276,
+ "chats": 9,
+ "messages": 29,
+ "quiz_score": 0.24,
  "quiz_pairs": 14,
  "growths": 1,
  "auto_grows": 0,
  "rollbacks": 0,
  "ladder_idx": 0,
- "best_val": 3.5464,
- "rebirths": 1,
+ "best_val": 4.2571,
+ "rebirths": 2,
  "cloud_runs": 0
 }

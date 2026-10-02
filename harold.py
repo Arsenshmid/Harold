@@ -634,7 +634,8 @@ def ensure_vocab(model, text):
         model.tok = Tok("char", vocab)
     else:
         have = set(model.vocab)
-        add = [c for c in sorted(set(text)) if c not in have]
+        add = [c for c in sorted(set(text)) if c not in have
+               and (re.match(r"[A-Za-zА-Яа-яЁё0-9]", c) or c in " \n\t.,!?;:-—\"'()[]«»…")]
         if not add:
             return model.vocab
         vocab = model.vocab + add
@@ -1204,6 +1205,13 @@ def eval_loss(model, ids, iters=8, batch_size=4):
 
 
 # ============================ интернет ============================
+def _is_clean_text(t):
+    letters = [c for c in t if c.isalpha()]
+    if len(letters) < 20:
+        return False
+    ok = sum(1 for c in letters if ("a" <= c <= "z") or ("A" <= c <= "Z")
+             or ("а" <= c <= "я") or c in "Ёё")
+    return ok / len(letters) >= 0.95
 
 def fetch_wiki(lang, n):
     os.makedirs(CORPUS_DIR, exist_ok=True)
@@ -1220,7 +1228,7 @@ def fetch_wiki(lang, n):
             pages = d.get("query", {}).get("pages", {}).values()
             for pg in pages:
                 title, extract = pg.get("title", ""), (pg.get("extract") or "").strip()
-                if len(extract) < 200:
+                if len(extract) < 200 or not _is_clean_text(title + " " + extract):
                     continue
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(f"\n\nСтатья Википедии: {title}.\n{extract}\n")
@@ -3132,3 +3140,11 @@ if __name__ == "__main__":
 # git rm -r --cached harold_data/backups -q
 # git rm -r --cached harold_data/mnist -q
 # git rm -r --cached harold_data/faces -q
+
+
+
+# # 1. yml на месте? Должен напечатать строку с "if: always()":
+# findstr "always" .github\workflows\harold.yml
+
+# # 2. Код жив?
+# python harold.py -h
