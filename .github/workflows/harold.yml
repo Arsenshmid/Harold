@@ -6,11 +6,11 @@ on:
       gens:
         description: 'Generations per run'
         required: true
-        default: '3'
+        default: '10'
       steps:
         description: 'Steps per generation'
         required: true
-        default: '600'
+        default: '800'
 
 permissions:
   contents: write
@@ -34,6 +34,7 @@ jobs:
           python harold.py evolve --gens "${{ github.event.inputs.gens }}" --steps "${{ github.event.inputs.steps }}" --read 2 --lr 1e-3 --auto-grow --patience 3
 
       - name: Save brain to repo
+        if: always()
         run: |
           git config user.name "harold-bot"
           git config user.email "actions@users.noreply.github.com"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Мистер Гарольд 3.2 «Облако + Браузер» — развивающаяся нейросеть на NumPy.
+Мистер Гарольд 3.3 — развивающаяся нейросеть на NumPy.
 
 ЖИЗНЬ:
   init          — рождение Гарольда         [--bpe --merges N]
@@ -18,23 +18,27 @@
   read          — случайные статьи Википедии [--n 5 --lang ru]
   learn         — одна веб-страница          [--url https://...]
   ingest/feed   — файл / папка текстов. ПОВТОРНОЕ СКАРМЛИВАНИЕ БЕЗОПАСНО:
-                  одинаковые файлы пропускаются, разные книги с одним именем
-                  (text.txt) сохраняются КАЖДАЯ — с отпечатком содержимого.
+                  та же книга (по содержимому, под любым именем) — пропуск,
+                  разные книги с одним именем сохраняются КАЖДАЯ.
   teach         — личные уроки вопрос-ответ
 
 ОБЩЕНИЕ И ПАМЯТЬ:
   chat / say / think / remember / memory / forget
 
+ЛИЦА (нужен opencv-python):
+  face-add      — познакомить: face-add ИМЯ фото.jpg   [--all]
+  face-find     — кто на фото?                          [--thr 0.45]
+  face-list     — кого знает в лицо
+  face-forget   — забыть человека
+
 ОБЛАКО И БРАУЗЕР:
-  export-web    — собрать САЙТ-ЧАТ: мозг Гарольда работает прямо в браузере
-                  (чистый JS, без сервера) [--out site --memory --episodes 3]
-  cloud-setup   — создать GitHub Actions workflow: бесплатное облачное
-                  обучение по расписанию + автопубликация на Pages
+  export-web    — сайт-чат: мозг Гарольда работает прямо в браузере
+  cloud-setup   — GitHub Actions: облако-тренажёр + публикация на Pages
 
 КОНТРОЛЬ:
   stats / diary [--chart] / quiz
 ЗРЕНИЕ:
-  vision-train / see
+  vision-train / see   (цифры MNIST)
 
 Гарантии: старые harold_data/* грузятся как есть; нейрогенез не меняет
 функцию мозга; автооткат к лучшей версии (best.npz); честная контрольная
@@ -82,11 +86,14 @@ MILES_PATH = os.path.join(DATA_DIR, "milestones.json")
 MEM_DIR = os.path.join(DATA_DIR, "memory")
 PROFILE_PATH = os.path.join(MEM_DIR, "profile.json")
 EPISODES_PATH = os.path.join(MEM_DIR, "episodes.jsonl")
+FACES_DIR = os.path.join(DATA_DIR, "faces")
+FACES_NPZ = os.path.join(FACES_DIR, "gallery.npz")
+FACES_JSON = os.path.join(FACES_DIR, "names.json")
 
 # SCP-вики блокирует питоновские UA (403) — представляемся браузером
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 HaroldBot/3.2 "
-      "(обучающий проект; свяжитесь: твоя@почта.ru)")
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 HaroldBot/3.3 "
+      "(educational project; contact: apce2@mail.ru)")
 
 DEFAULT_CONFIG = {
     "d_model": 192, "n_heads": 4, "n_layers": 3, "block_size": 192,
@@ -403,10 +410,11 @@ class MiniGPT:
             lc = cache["layers"][l]
             dmlp = dh
             dh_mid = dh.copy()
-            grads[pre + "W2"] = lc["r"].reshape(-1, 4 * D).T @ dmlp.reshape(-1, D)
+            Hs = lc["r"].shape[-1]   # фактический размер скрытого слоя (растёт после grow --mlp)
+            grads[pre + "W2"] = lc["r"].reshape(-1, Hs).T @ dmlp.reshape(-1, D)
             grads[pre + "b2"] = dmlp.sum(axis=(0, 1))
             dz1 = (dmlp @ p[pre + "W2"].T) * (lc["r"] > 0)
-            grads[pre + "W1"] = lc["a2"].reshape(-1, D).T @ dz1.reshape(-1, 4 * D)
+            grads[pre + "W1"] = lc["a2"].reshape(-1, D).T @ dz1.reshape(-1, Hs)
             grads[pre + "b1"] = dz1.sum(axis=(0, 1))
             da2 = dz1 @ p[pre + "W1"].T
             da2, dg2 = rmsnorm_backward(da2, lc["c2"], p[pre + "g2"])
@@ -546,9 +554,8 @@ def dialog_ids(tok):
 
 
 def boost_with_dialogs(main_ids, dids):
-    """Диалоги держим ~20% смеси ПРИ ЛЮБОМ размере корпуса.
-    Прежний кап в 6 повторов на миллионах символов растворял личные уроки
-    до 0.1% — отсюда была каша в чате и потеря имени хозяина."""
+    """Диалоги держим ~20% смеси ПРИ ЛЮБОМ размере корпуса,
+    чтобы личные уроки не тонули в миллионах символов книг."""
     if dids is None or len(dids) < 100:
         return main_ids
     target = int(len(main_ids) * 0.2)
@@ -556,18 +563,6 @@ def boost_with_dialogs(main_ids, dids):
     if rep <= 0:
         return main_ids
     return np.concatenate([main_ids] + [dids] * rep)
-
-def _corpus_hashes():
-    hashes = set()
-    if os.path.isdir(CORPUS_DIR):
-        for fn in os.listdir(CORPUS_DIR):
-            if fn.lower().endswith(".txt"):
-                try:
-                    with open(os.path.join(CORPUS_DIR, fn), "rb") as f:
-                        hashes.add(hashlib.md5(f.read()).hexdigest())
-                except Exception:
-                    pass
-    return hashes
 
 
 def _corpus_hashes():
@@ -584,8 +579,11 @@ def _corpus_hashes():
 
 
 def store_file(src, prefix="60_"):
-    """Никогда не перезаписывает и не задваивает книги: та же книга под любым
-    именем — пропуск; новое содержимое под занятым именем — отдельный файл."""
+    """Никогда не перезаписывает и не задваивает книги:
+    - та же книга под ЛЮБЫМ именем (по содержимому) → пропуск;
+    - новое содержимое под занятым именем → отдельный файл с отпечатком.
+    ВАЖНО: одна книга = один файл. Если дописывать книги в конец одного
+    text.txt и кормить заново, сохранится полный слепок — текст задвоится."""
     base = os.path.basename(src)
     stem, ext = os.path.splitext(base)
     with open(src, "rb") as f:
@@ -604,6 +602,7 @@ def store_file(src, prefix="60_"):
     with open(dst, "wb") as f:
         f.write(data)
     return dst, "new"
+
 
 def resize_params(params, old_vocab, new_vocab):
     o = {c: i for i, c in enumerate(old_vocab)}
@@ -760,7 +759,7 @@ def load_stats():
     base = {"total_steps": 0, "train_seconds": 0.0, "chats": 0, "messages": 0,
             "quiz_score": None, "quiz_pairs": 0, "growths": 0,
             "auto_grows": 0, "rollbacks": 0, "ladder_idx": 0,
-            "best_val": None, "rebirths": 0}
+            "best_val": None, "rebirths": 0, "cloud_runs": 0}
     if os.path.exists(STATS_PATH):
         with open(STATS_PATH, encoding="utf-8") as f:
             base.update(json.load(f))
@@ -962,6 +961,8 @@ MILESTONES = [
     ("cloud", "🌩 Облачное обучение (GitHub Actions)",
      lambda c: c["stats"].get("cloud_runs", 0) >= 1),
     ("browser", "🌐 Клон в браузере собран", lambda c: os.path.exists("site/index.html")),
+    ("faces1", "👤 Узнаёт первое лицо", lambda c: c.get("faces", 0) >= 1),
+    ("faces5", "👥 Узнаёт пять людей", lambda c: c.get("faces", 0) >= 5),
 ]
 
 
@@ -1035,6 +1036,13 @@ def gather_context():
         with np.load(WEIGHTS_PATH) as z:
             c["params"] = int(sum(a.size for a in z.values()))
     c["vis"] = load_vision_acc()
+    c["faces"] = 0
+    if os.path.exists(FACES_JSON):
+        try:
+            with open(FACES_JSON, encoding="utf-8") as f:
+                c["faces"] = len(json.load(f).get("people", {}))
+        except Exception:
+            pass
     c["quiz"] = st.get("quiz_score")
     c["growths"] = st.get("growths", 0)
     c["auto_grows"] = st.get("auto_grows", 0)
@@ -1332,7 +1340,17 @@ def crawl_scp(base, start, end, suffix, delay, min_chars):
         if name in done:
             continue
         try:
-            req = urllib.request.Request(f"{base}/{slug}", headers={"User-Agent": UA})
+            req = urllib.request.Request(
+                f"{base}/{slug}",
+                headers={
+                    "User-Agent": UA,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Referer": base + "/",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                }
+            )
             with urllib.request.urlopen(req, timeout=20) as r:
                 page = r.read().decode("utf-8", errors="ignore")
             ex = ScpExtractor()
@@ -1563,6 +1581,7 @@ def cmd_init(args):
     print("  python harold.py crawl scp --start 1 --end 500   # Фонд SCP")
     print("  python harold.py evolve --gens 5 --lr 1e-3 --auto-grow")
     print("  python harold.py chat")
+    print("  python harold.py face-add Арсен фото.jpg         # познакомить в лицо")
 
 
 def cmd_rebirth(args):
@@ -1591,7 +1610,7 @@ def cmd_rebirth(args):
         os.remove(BEST_PATH)
     print(f"🦋 ПЕРЕРОЖДЕНИЕ! Новый мозг: {n_params(model):,} параметров · "
           f"токенизатор {cfg.get('tokenizer', 'char')} · контекст {cfg['block_size']}")
-    print("   Корпус, вечная память о тебе, дневник и трофеи — НЕ тронуты.")
+    print("   Корпус, вечная память о тебе, фотоальбом, дневник и трофеи — НЕ тронуты.")
     print("   Переучись: python harold.py evolve --gens 10 --steps 800 --lr 1e-3 --auto-grow")
 
 
@@ -1660,7 +1679,7 @@ def cmd_evolve(args):
         print(f"  темп обучения зафиксирован: lr = {args.lr}")
     elif cur_lr < 3.5e-4:
         print(f"  ⚠️ темп обучения сильно снижен прошлыми поколениями (lr={cur_lr:.1e}).")
-        print("     Рекомендую: python harold.py evolve --lr 1e-3  — иначе учиться будет еле-еле")
+        print("     Рекомендую: python harold.py evolve --lr 1e-3")
     backup_weights("evolve")
     st = load_stats()
     best = st.get("best_val")
@@ -1798,7 +1817,7 @@ def cmd_ingest(args):
     os.makedirs(CORPUS_DIR, exist_ok=True)
     dst, status = store_file(args.file, prefix="60_")
     if status == "dup":
-        print("Эта книга уже в знаниях (то же имя и размер) — пропускаю, ничего не затёрто.")
+        print("Эта книга уже в знаниях (то же содержимое) — пропускаю, ничего не затёрто.")
     else:
         print(f"Книга добавлена: {os.path.basename(dst)} ({os.path.getsize(dst):,} байт)")
         print("Закрепить: python harold.py train --steps 800 --lr 1e-3")
@@ -1868,9 +1887,17 @@ def cmd_chat(args):
     if text:
         ensure_vocab(model, text)
     p = load_profile()
+    known = 0
+    if os.path.exists(FACES_JSON):
+        try:
+            with open(FACES_JSON, encoding="utf-8") as f:
+                known = len(json.load(f).get("people", {}))
+        except Exception:
+            pass
     print("=" * 62)
     print("Мистер Гарольд на связи. Пустая строка или /exit — выход.")
     print(f"поколение {model.generation} · воспоминаний: {count_episodes()}"
+          + (f" · знает в лицо: {known}" if known else "")
           + (f" · хозяин: {p['name']}" if p.get("name") else ""))
     print("Команды: /save — записать обмен как урок, /memory — что он помнит")
     print("=" * 62)
@@ -2085,7 +2112,7 @@ def cmd_grow(args):
     print_trophies(check_milestones())
 
 
-# ============================ зрение ============================
+# ============================ зрение: цифры ============================
 
 MNIST_URL = "https://storage.googleapis.com/cvdf-datasets/mnist/"
 MNIST_FILES = ["train-images-idx3-ubyte.gz", "train-labels-idx1-ubyte.gz",
@@ -2183,132 +2210,186 @@ def cmd_see(args):
     print("  вероятности:", " ".join(f"{i}:{p:.2f}" for i, p in enumerate(pr)))
 
 
-# ============================ панель и дневник ============================
+# ============================ ЛИЦА: Гарольд узнаёт людей ============================
 
-def cmd_stats(args):
-    if not os.path.exists(META_PATH):
-        print("Гарольд ещё не создан: python harold.py init")
+FACE_SIZE = 64          # каждое лицо сжимается в квадрат 64x64
+PCA_DIM = 48            # длина «отпечатка лица»
+FACE_THR = 0.45         # ниже этой похожести — «не знаю»
+
+
+def _cv2():
+    try:
+        import cv2
+        return cv2
+    except ImportError:
+        print("Нужен OpenCV (бесплатно): pip install opencv-python")
+        return None
+
+
+def load_face_gallery():
+    if os.path.exists(FACES_JSON):
+        with open(FACES_JSON, encoding="utf-8") as f:
+            return json.load(f)
+    return {"people": {}, "next_id": 0}
+
+
+def save_face_gallery(g):
+    os.makedirs(FACES_DIR, exist_ok=True)
+    atomic_write_json(FACES_JSON, g)
+
+
+def _load_gallery_npz():
+    if os.path.exists(FACES_NPZ):
+        with np.load(FACES_NPZ) as z:
+            return list(z["X"]), list(z["ids"])
+    return [], []
+
+
+def _save_gallery_npz(X, ids):
+    """Пересобирает фотоальбом и «зрение на лица» (собственные лица, PCA)."""
+    if not X:
+        if os.path.exists(FACES_NPZ):
+            os.remove(FACES_NPZ)
         return
-    check_milestones()
-    c = gather_context()
-    xp = compute_xp(c)
-    idx, title, cur_thr, next_thr = level_for(xp)
-    intellect = compute_intellect(c)
-    print("═" * 66)
-    print("  🤖 МИСТЕР ГАРОЛЬД — панель развития".center(62))
-    print("═" * 66)
-    age = "?"
-    if c["born"]:
-        try:
-            born = time.mktime(time.strptime(c["born"], "%Y-%m-%d %H:%M:%S"))
-            days = max((time.time() - born) / 86400, 0)
-            age = f"{days:.1f} дн." if days < 30 else f"{days / 30:.1f} мес."
-        except Exception:
-            pass
-    print(f"  Уровень {idx} «{title}»    XP {fmt_int(xp)}")
-    if next_thr:
-        frac = (xp - cur_thr) / (next_thr - cur_thr)
-        print(f"  до уровня {idx + 1}: {fmt_int(next_thr - xp)} XP  [{bar(frac, 30)}]")
-    else:
-        print(f"  Максимальный уровень! [{bar(1.0, 30)}]")
-    print(f"  Поколение {c['gens']} · возраст {age} · интеллект {intellect}/100"
-          f" [{bar(intellect / 100, 20)}] {intellect_label(intellect)}")
-    print("—" * 66)
-    print("  🧠 МОЗГ")
-    arch = c["arch"]
-    tok_str = f"BPE ({c['merges']} слияний)" if c["tok_kind"] == "bpe" else "посимвольный"
-    print(f"   параметров     {fmt_int(c['params'])}   токенизатор: {tok_str}")
-    if arch:
-        print(f"   архитектура    d_model={arch.get('d_model')} · слоёв {arch.get('n_layers')}"
-              f" · голов {arch.get('n_heads')} · контекст {arch.get('block_size')}")
-    fill = min(c["corpus"] / max(c["params"] * 18, 1), 1.5)
-    state = "отлично усваивает" if fill < 0.7 else ("плотно заполнен" if fill < 1 else "ПЕРЕПОЛНЕН!")
-    print(f"   заполнение     [{bar(fill / 1.5, 30)}] {state}")
-    if fill >= 0.9:
-        print("   💡 python harold.py grow --mlp 2  или  evolve --auto-grow")
-    lr_now = c["arch"].get("lr")
-    if lr_now is not None and lr_now < 3.5e-4:
-        print(f"   ⚠️ темп обучения задавлен (lr={lr_now:.1e}) — верни: train --lr 1e-3")
-    print("  📚 ИСТОЧНИКИ ЗНАНИЙ")
-    print(f"   Википедия {c['wiki']} · SCP {c['scp']} · веб-страницы {c['web']}"
-          f" · книги {c['books']} · файлов {c['files']}")
-    print(f"   прочитано      {fmt_int(c['corpus'])} символов")
-    print(f"   лексикон       {c['vocab']} токенов · {fmt_int(c['words'])} слов · уроки {c['dialogs']}")
-    if c["losses"]:
-        print(f"   ошибка         {max(c['losses']):.2f} → {min(c['losses']):.2f}   {spark(c['losses'])}")
-    if c["val_losses"]:
-        print(f"   контрольная    {spark(c['val_losses'])}   сейчас {c['val_losses'][-1]:.3f}")
-    print("  🚀 АНТИ-ПОТОЛОК")
-    bv = c["best_val"]
-    print(f"   рекорд понимания {bv if bv is None else f'{bv:.3f}'} · "
-          f"авто-ростов {c['auto_grows']} · откатов порчи {c['rollbacks']}")
-    k, v = GROWTH_LADDER[c["ladder_idx"] % len(GROWTH_LADDER)]
-    nxt = {"ctx": f"контекст → {v}", "mlp": f"мышление ×{v}", "depth": f"+{v} слой"}[k]
-    print(f"   следующая ступень роста: {nxt}")
-    print("  💭 ПАМЯТЬ (никогда не забудет)")
-    p = c["profile"]
-    print(f"   о хозяине      {memory_static_text(p) or '—'}")
-    print(f"   воспоминаний   {c['episodes']} разговоров")
-    q = c["quiz"]
-    print(f"   экзамен        {'вспоминает %.0f%% уроков' % (q * 100) if q is not None else 'не сдавал (quiz)'}")
-    print("  ☕ БЕСЕДЫ И ТРУД")
-    s = c["stats"]
-    print(f"   сообщений {s.get('messages', 0)} · бесед {s.get('chats', 0)}"
-          f" · шагов {fmt_int(s.get('total_steps', 0))}"
-          f" · за пультом {fmt_dur(s.get('train_seconds', 0))}"
-          f" · облачных запусков {s.get('cloud_runs', 0)}")
-    vis_str = f"{c['vis'] * 100:.1f}%" if c["vis"] is not None else "не обучено (vision-train)"
-    print(f"   зрение         {vis_str}")
-    unlocked = c["milestones"]
-    titles = [t for mid, t, _ in MILESTONES if mid in unlocked]
-    print(f"  🏆 ТРОФЕИ {len(titles)}/{len(MILESTONES)}")
-    print("   " + (" · ".join(titles[-10:]) if titles else "—"))
-    print("═" * 66)
-    print("  Рецепты: crawl scp · feed папка · evolve --lr 1e-3 --auto-grow · export-web · cloud-setup")
+    Xa = np.asarray(X, dtype=np.float32)
+    mean = Xa.mean(axis=0)
+    Xc = Xa - mean
+    _, _, Vt = np.linalg.svd(Xc, full_matrices=False)
+    K = min(PCA_DIM, Xc.shape[0], Xc.shape[1])
+    atomic_savez(FACES_NPZ, X=Xa, ids=np.asarray(ids, dtype=np.int64),
+                 mean=mean.astype(np.float32), comp=Vt[:K].astype(np.float32))
 
 
-def cmd_diary(args):
-    diary = read_diary()
-    if not diary:
-        print("Дневник пуст. Запускайте harold evolve — записи появятся здесь.")
+def detect_faces(img_path):
+    """Находит лица на фото. Возвращает (картинка, [(прямоугольник, вектор)]) или (None, [])."""
+    cv2 = _cv2()
+    if cv2 is None:
+        return None, []
+    img = cv2.imread(img_path)
+    if img is None:
+        return None, []
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)   # выравниваем освещение
+    cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    boxes = cascade.detectMultiScale(gray, scaleFactor=1.15,
+                                     minNeighbors=5, minSize=(40, 40))
+    out = []
+    for (x, y, w, h) in boxes:
+        crop = cv2.resize(gray[y:y + h, x:x + w], (FACE_SIZE, FACE_SIZE))
+        out.append(((int(x), int(y), int(w), int(h)),
+                    crop.astype(np.float32).reshape(-1) / 255.0))
+    return img, out
+
+
+def _embed(v, mean, comp):
+    return (v - mean) @ comp.T
+
+
+def _cos(a, b):
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na < 1e-9 or nb < 1e-9:
+        return 0.0
+    return float(a @ b / (na * nb))
+
+
+def cmd_face_add(args):
+    img, faces = detect_faces(args.photo)
+    if img is None:
+        print("Не смог открыть картинку:", args.photo)
         return
-    if args.chart:
-        losses = [e["train_loss"] for e in diary if e.get("train_loss") is not None]
-        vloss = [e["val_loss"] for e in diary if e.get("val_loss") is not None]
-        corp = [e["corpus_chars"] for e in diary if e.get("corpus_chars")]
-        par = [e.get("params") for e in diary if e.get("params")]
-        ctx = [e.get("ctx") for e in diary if e.get("ctx")]
-        print("———— 📈 Графики жизни Гарольда ————————")
-        if losses:
-            print(f"  ошибка     {losses[0]:.2f} → {losses[-1]:.2f}  {spark(losses, 56)}")
-        if vloss:
-            print(f"  контроль   {vloss[0]:.2f} → {vloss[-1]:.2f}  {spark(vloss, 56)}")
-        if corp:
-            print(f"  корпус     {fmt_int(corp[0])} → {fmt_int(corp[-1])}  {spark(corp, 56)}")
-        if par:
-            print(f"  мозг       {fmt_int(par[0])} → {fmt_int(par[-1])}  {spark(par, 56)}")
-        if ctx:
-            print(f"  контекст   {ctx[0]} → {ctx[-1]} токенов")
-        print()
-    for e in diary[-args.n:]:
-        if e.get("event"):
-            print(f"[{e.get('time', '')}] ⚡ {e['event']}")
-            continue
-        vl = f"{e['val_loss']:.3f}" if e.get("val_loss") is not None else "—"
-        print(f"поколение {e.get('generation', 0):>3} | ошибка {e.get('train_loss', 0):.3f}"
-              f" | контроль {vl} | шагов {e.get('steps', '?')}"
-              f" | контекст {e.get('ctx', '?')} | корпус {e.get('corpus_chars', 0):>9,}"
-              f" | «{e.get('sample', '')[:44]}»")
-
-
-def cmd_reset(args):
-    if os.path.exists(DATA_DIR):
-        print("⚠️  Будет удалено ВСЁ: мозг, знания, ВЕЧНАЯ ПАМЯТЬ о тебе, трофеи, бэкапы.")
-        if input(f"Удалить {DATA_DIR} полностью? (y/n): ").strip().lower() == "y":
-            shutil.rmtree(DATA_DIR)
-            print("Гарольд удалён. Создайте нового: python harold.py init")
+    if not faces:
+        print("Лиц не нашёл. Нужно фото, где лицо смотрит в камеру и хорошо освещено.")
+        return
+    if len(faces) > 1 and not args.all:
+        print(f"На фото {len(faces)} лиц. Какое добавить?")
+        for i, (box, _) in enumerate(faces):
+            print(f"  {i}: позиция x={box[0]} y={box[1]}, размер {box[2]}x{box[3]}")
+        pick = input("Номер (Enter = 0, «all» = все): ").strip().lower()
+        idxs = list(range(len(faces))) if pick == "all" else \
+            [int(pick) if pick.isdigit() else 0]
     else:
-        print("Нечего удалять.")
+        idxs = list(range(len(faces)))
+
+    g = load_face_gallery()
+    name = args.name.strip()
+    p = g["people"].get(name)
+    if p is None:
+        p = {"id": g["next_id"], "count": 0}
+        g["next_id"] += 1
+        g["people"][name] = p
+    X, ids = _load_gallery_npz()
+    for i in idxs:
+        X.append(faces[i][1])
+        ids.append(p["id"])
+        p["count"] += 1
+    _save_gallery_npz(X, ids)
+    save_face_gallery(g)
+    print(f"🧑 Запомнил {len(idxs)} фото как «{name}». Теперь он знает {len(g['people'])} чел. в лицо.")
+    if p["count"] < 3:
+        print(f"   Совет: добавь ещё 2–4 фото «{name}» при другом свете/ракурсе — узнавать будет надёжнее.")
+    print_trophies(check_milestones())
+
+
+def cmd_face_find(args):
+    img, faces = detect_faces(args.photo)
+    if img is None:
+        print("Не смог открыть картинку:", args.photo)
+        return
+    if not faces:
+        print("Лиц на фото не нашёл.")
+        return
+    g = load_face_gallery()
+    if not g["people"] or not os.path.exists(FACES_NPZ):
+        print("Гарольд ещё никого не знает. Познакомь: python harold.py face-add ИМЯ фото.jpg")
+        return
+    with np.load(FACES_NPZ) as z:
+        X, ids = list(z["X"]), list(z["ids"])
+        mean, comp = z["mean"], z["comp"]
+    id2name = {p["id"]: nm for nm, p in g["people"].items()}
+    gal = [(id2name[int(ids[j])], _embed(X[j], mean, comp)) for j in range(len(X))]
+    print(f"Лиц на фото: {len(faces)}")
+    for i, (box, v) in enumerate(faces):
+        e = _embed(v, mean, comp)
+        best_name, best_sim = None, -1.0
+        for nm, ge in gal:
+            s = _cos(e, ge)
+            if s > best_sim:
+                best_name, best_sim = nm, s
+        if best_sim >= args.thr:
+            print(f"  лицо {i} (x={box[0]}, y={box[1]}): {best_name}  — уверенность {best_sim:.0%}")
+        else:
+            print(f"  лицо {i} (x={box[0]}, y={box[1]}): не знаю такого "
+                  f"(ближайшее: {best_name}, {best_sim:.0%})")
+    print_trophies(check_milestones())
+
+
+def cmd_face_list(args):
+    g = load_face_gallery()
+    if not g["people"]:
+        print("Пока никого не знает. Познакомь: python harold.py face-add ИМЯ фото.jpg")
+        return
+    print("———— 👥 Гарольд знает в лицо ————————")
+    for nm, p in sorted(g["people"].items(), key=lambda kv: kv[1]["id"]):
+        print(f"  {nm}  ({p['count']} фото)")
+
+
+def cmd_face_forget(args):
+    g = load_face_gallery()
+    name = args.name.strip()
+    if name not in g["people"]:
+        print("Такого человека он и не знает. Список: python harold.py face-list")
+        return
+    pid = g["people"][name]["id"]
+    X, ids = _load_gallery_npz()
+    keep = [j for j in range(len(ids)) if int(ids[j]) != pid]
+    if keep:
+        _save_gallery_npz([X[j] for j in keep], [int(ids[j]) for j in keep])
+    else:
+        _save_gallery_npz([], [])
+    del g["people"][name]
+    save_face_gallery(g)
+    print(f"Забыл «{name}» навсегда.")
 
 
 # ============================ САЙТ: Гарольд в браузере ============================
@@ -2708,7 +2789,8 @@ def cmd_cloud_setup(args):
     wf = os.path.join(wf_dir, "harold.yml")
     with open(wf, "w", encoding="utf-8") as f:
         f.write(WORKFLOW)
-    gi_lines = ["__pycache__/", "*.tmp", "harold_data/backups/", "harold_data/mnist/"]
+    gi_lines = ["__pycache__/", "*.tmp", "harold_data/backups/", "harold_data/mnist/",
+                "harold_data/faces/"]
     gi_path = ".gitignore"
     existing = set()
     if os.path.exists(gi_path):
@@ -2718,32 +2800,149 @@ def cmd_cloud_setup(args):
         for l in gi_lines:
             if l not in existing:
                 f.write(l + "\n")
-        # личная память не должна утекать в публичный репозиторий:
         f.write("# harold_data/memory/   ← раскомментируй, если репозиторий ПУБЛИЧНЫЙ\n")
-    st = load_stats()
-    st["cloud_runs"] = st.get("cloud_runs", 0)  # счётчик заполнит Actions (опционально)
-    save_stats(st)
-    print("🌩 Workflow создан: .github/workflows/harold.yml (+ .gitignore дополнен)")
+    print("🌩 Workflow создан: .github/workflows/harold.yml (+ .gitignore дополнен, фотоальбом скрыт)")
     print("""
 Дальше — 5 шагов:
-  1) cd в папку проекта, затем:
-       git init
-       git add harold.py .gitignore .github harold_data
-       git commit -m "Гарольд идёт в облако"
-  2) Создай репозиторий на github.com.
-     ⚠️ Бесплатный GitHub Pages работает только для ПУБЛИЧНЫХ репозиториев!
-     Публичный?  → сначала раскомментируй "# harold_data/memory/" в .gitignore,
-                   чтобы память о тебе не уехала в интернет, и перезапусти git add.
-     Приватный?  → Pages потребует платный план; тогда просто оставь Actions.
+  1) git init && git add harold.py .gitignore .github harold_data && git commit -m "Гарольд идёт в облако"
+  2) Создай репозиторий на github.com (Public — для бесплатного Pages).
+     Публичный? → раскомментируй "# harold_data/memory/" в .gitignore и перезапусти git add.
   3) git remote add origin https://github.com/ТВОЙ_НИК/ИМЯ.git
      git branch -M main
      git push -u origin main
-  4) На GitHub: Settings → Pages → Source: «GitHub Actions»
-  5) Вкладка Actions → «Harold — облачная тренировка» → Run workflow
-     Или просто жди ночного запуска (cron 03:00 UTC каждый день).
-Результат: каждое утро Гарольд тренируется на сервере GitHub, веса коммитятся
-обратно, а свежий клон сайта лежит на https://ТВОЙ_НИК.github.io/ИМЯ/
+  4) Settings → Pages → Source: «GitHub Actions»
+  5) Actions → «Harold — облачная тренировка» → Run workflow (gens = 10)
 """)
+
+
+# ============================ панель и дневник ============================
+
+def cmd_stats(args):
+    if not os.path.exists(META_PATH):
+        print("Гарольд ещё не создан: python harold.py init")
+        return
+    check_milestones()
+    c = gather_context()
+    xp = compute_xp(c)
+    idx, title, cur_thr, next_thr = level_for(xp)
+    intellect = compute_intellect(c)
+    print("═" * 66)
+    print("  🤖 МИСТЕР ГАРОЛЬД — панель развития".center(62))
+    print("═" * 66)
+    age = "?"
+    if c["born"]:
+        try:
+            born = time.mktime(time.strptime(c["born"], "%Y-%m-%d %H:%M:%S"))
+            days = max((time.time() - born) / 86400, 0)
+            age = f"{days:.1f} дн." if days < 30 else f"{days / 30:.1f} мес."
+        except Exception:
+            pass
+    print(f"  Уровень {idx} «{title}»    XP {fmt_int(xp)}")
+    if next_thr:
+        frac = (xp - cur_thr) / (next_thr - cur_thr)
+        print(f"  до уровня {idx + 1}: {fmt_int(next_thr - xp)} XP  [{bar(frac, 30)}]")
+    else:
+        print(f"  Максимальный уровень! [{bar(1.0, 30)}]")
+    print(f"  Поколение {c['gens']} · возраст {age} · интеллект {intellect}/100"
+          f" [{bar(intellect / 100, 20)}] {intellect_label(intellect)}")
+    print("—" * 66)
+    print("  🧠 МОЗГ")
+    arch = c["arch"]
+    tok_str = f"BPE ({c['merges']} слияний)" if c["tok_kind"] == "bpe" else "посимвольный"
+    print(f"   параметров     {fmt_int(c['params'])}   токенизатор: {tok_str}")
+    if arch:
+        print(f"   архитектура    d_model={arch.get('d_model')} · слоёв {arch.get('n_layers')}"
+              f" · голов {arch.get('n_heads')} · контекст {arch.get('block_size')}")
+    fill = min(c["corpus"] / max(c["params"] * 18, 1), 1.5)
+    state = "отлично усваивает" if fill < 0.7 else ("плотно заполнен" if fill < 1 else "ПЕРЕПОЛНЕН!")
+    print(f"   заполнение     [{bar(fill / 1.5, 30)}] {state}")
+    if fill >= 0.9:
+        print("   💡 python harold.py grow --mlp 2  или  evolve --auto-grow")
+    lr_now = c["arch"].get("lr")
+    if lr_now is not None and lr_now < 3.5e-4:
+        print(f"   ⚠️ темп обучения задавлен (lr={lr_now:.1e}) — верни: train --lr 1e-3")
+    print("  📚 ИСТОЧНИКИ ЗНАНИЙ")
+    print(f"   Википедия {c['wiki']} · SCP {c['scp']} · веб-страницы {c['web']}"
+          f" · книги {c['books']} · файлов {c['files']}")
+    print(f"   прочитано      {fmt_int(c['corpus'])} символов")
+    print(f"   лексикон       {c['vocab']} токенов · {fmt_int(c['words'])} слов · уроки {c['dialogs']}")
+    if c["losses"]:
+        print(f"   ошибка         {max(c['losses']):.2f} → {min(c['losses']):.2f}   {spark(c['losses'])}")
+    if c["val_losses"]:
+        print(f"   контрольная    {spark(c['val_losses'])}   сейчас {c['val_losses'][-1]:.3f}")
+    print("  🚀 АНТИ-ПОТОЛОК")
+    bv = c["best_val"]
+    print(f"   рекорд понимания {bv if bv is None else f'{bv:.3f}'} · "
+          f"авто-ростов {c['auto_grows']} · откатов порчи {c['rollbacks']}")
+    k, v = GROWTH_LADDER[c["ladder_idx"] % len(GROWTH_LADDER)]
+    nxt = {"ctx": f"контекст → {v}", "mlp": f"мышление ×{v}", "depth": f"+{v} слой"}[k]
+    print(f"   следующая ступень роста: {nxt}")
+    print("  👁 ГЛАЗА И ЛИЦА")
+    vis_str = f"{c['vis'] * 100:.1f}%" if c["vis"] is not None else "цифры не обучены (vision-train)"
+    print(f"   цифры          {vis_str}")
+    print(f"   лица           знает {c.get('faces', 0)} чел. (face-add / face-find)")
+    print("  💭 ПАМЯТЬ (никогда не забудет)")
+    p = c["profile"]
+    print(f"   о хозяине      {memory_static_text(p) or '—'}")
+    print(f"   воспоминаний   {c['episodes']} разговоров")
+    q = c["quiz"]
+    print(f"   экзамен        {'вспоминает %.0f%% уроков' % (q * 100) if q is not None else 'не сдавал (quiz)'}")
+    print("  ☕ БЕСЕДЫ И ТРУД")
+    s = c["stats"]
+    print(f"   сообщений {s.get('messages', 0)} · бесед {s.get('chats', 0)}"
+          f" · шагов {fmt_int(s.get('total_steps', 0))}"
+          f" · за пультом {fmt_dur(s.get('train_seconds', 0))}"
+          f" · облачных запусков {s.get('cloud_runs', 0)}")
+    unlocked = c["milestones"]
+    titles = [t for mid, t, _ in MILESTONES if mid in unlocked]
+    print(f"  🏆 ТРОФЕИ {len(titles)}/{len(MILESTONES)}")
+    print("   " + (" · ".join(titles[-10:]) if titles else "—"))
+    print("═" * 66)
+    print("  Рецепты: crawl scp · feed папка · evolve --lr 1e-3 --auto-grow · face-add · export-web · cloud-setup")
+
+
+def cmd_diary(args):
+    diary = read_diary()
+    if not diary:
+        print("Дневник пуст. Запускайте harold evolve — записи появятся здесь.")
+        return
+    if args.chart:
+        losses = [e["train_loss"] for e in diary if e.get("train_loss") is not None]
+        vloss = [e["val_loss"] for e in diary if e.get("val_loss") is not None]
+        corp = [e["corpus_chars"] for e in diary if e.get("corpus_chars")]
+        par = [e.get("params") for e in diary if e.get("params")]
+        ctx = [e.get("ctx") for e in diary if e.get("ctx")]
+        print("———— 📈 Графики жизни Гарольда ————————")
+        if losses:
+            print(f"  ошибка     {losses[0]:.2f} → {losses[-1]:.2f}  {spark(losses, 56)}")
+        if vloss:
+            print(f"  контроль   {vloss[0]:.2f} → {vloss[-1]:.2f}  {spark(vloss, 56)}")
+        if corp:
+            print(f"  корпус     {fmt_int(corp[0])} → {fmt_int(corp[-1])}  {spark(corp, 56)}")
+        if par:
+            print(f"  мозг       {fmt_int(par[0])} → {fmt_int(par[-1])}  {spark(par, 56)}")
+        if ctx:
+            print(f"  контекст   {ctx[0]} → {ctx[-1]} токенов")
+        print()
+    for e in diary[-args.n:]:
+        if e.get("event"):
+            print(f"[{e.get('time', '')}] ⚡ {e['event']}")
+            continue
+        vl = f"{e['val_loss']:.3f}" if e.get("val_loss") is not None else "—"
+        print(f"поколение {e.get('generation', 0):>3} | ошибка {e.get('train_loss', 0):.3f}"
+              f" | контроль {vl} | шагов {e.get('steps', '?')}"
+              f" | контекст {e.get('ctx', '?')} | корпус {e.get('corpus_chars', 0):>9,}"
+              f" | «{e.get('sample', '')[:44]}»")
+
+
+def cmd_reset(args):
+    if os.path.exists(DATA_DIR):
+        print("⚠️  Будет удалено ВСЁ: мозг, знания, ВЕЧНАЯ ПАМЯТЬ, фотоальбом, трофеи, бэкапы.")
+        if input(f"Удалить {DATA_DIR} полностью? (y/n): ").strip().lower() == "y":
+            shutil.rmtree(DATA_DIR)
+            print("Гарольд удалён. Создайте нового: python harold.py init")
+    else:
+        print("Нечего удалять.")
 
 
 # ============================ CLI ============================
@@ -2832,16 +3031,6 @@ def main():
     sp.add_argument("--ctx", type=int, default=0)
     sp.set_defaults(fn=cmd_grow)
 
-    sp = sub.add_parser("export-web", help="собрать сайт-чат: Гарольд в браузере")
-    sp.add_argument("--out", default="site")
-    sp.add_argument("--memory", action="store_true",
-                    help="вшить память о хозяине (только для приватной публикации!)")
-    sp.add_argument("--episodes", type=int, default=3)
-    sp.set_defaults(fn=cmd_export_web)
-
-    sp = sub.add_parser("cloud-setup", help="создать GitHub Actions: облако + Pages")
-    sp.set_defaults(fn=cmd_cloud_setup)
-
     sp = sub.add_parser("chat", help="поговорить с Гарольдом")
     sp.add_argument("--temp", type=float, default=0.8)
     sp.add_argument("--topk", type=int, default=0)
@@ -2883,13 +3072,41 @@ def main():
     sp.add_argument("--n", type=int, default=40)
     sp.set_defaults(fn=cmd_quiz)
 
-    sp = sub.add_parser("vision-train", help="научить видеть (MNIST)")
+    sp = sub.add_parser("vision-train", help="научить видеть цифры (MNIST)")
     sp.add_argument("--epochs", type=int, default=2)
     sp.set_defaults(fn=cmd_vision_train)
 
     sp = sub.add_parser("see", help="распознать цифру на картинке")
     sp.add_argument("image")
     sp.set_defaults(fn=cmd_see)
+
+    sp = sub.add_parser("face-add", help="познакомить Гарольда с человеком по фото")
+    sp.add_argument("name")
+    sp.add_argument("photo")
+    sp.add_argument("--all", action="store_true", help="взять все лица с фото")
+    sp.set_defaults(fn=cmd_face_add)
+
+    sp = sub.add_parser("face-find", help="кто на фото?")
+    sp.add_argument("photo")
+    sp.add_argument("--thr", type=float, default=0.45, help="порог узнавания (0..1)")
+    sp.set_defaults(fn=cmd_face_find)
+
+    sp = sub.add_parser("face-list", help="кого Гарольд знает в лицо")
+    sp.set_defaults(fn=cmd_face_list)
+
+    sp = sub.add_parser("face-forget", help="забыть человека")
+    sp.add_argument("name")
+    sp.set_defaults(fn=cmd_face_forget)
+
+    sp = sub.add_parser("export-web", help="собрать сайт-чат: Гарольд в браузере")
+    sp.add_argument("--out", default="site")
+    sp.add_argument("--memory", action="store_true",
+                    help="вшить память о хозяине (только для приватной публикации!)")
+    sp.add_argument("--episodes", type=int, default=3)
+    sp.set_defaults(fn=cmd_export_web)
+
+    sp = sub.add_parser("cloud-setup", help="создать GitHub Actions: облако + Pages")
+    sp.set_defaults(fn=cmd_cloud_setup)
 
     sp = sub.add_parser("stats", help="большая панель развития")
     sp.set_defaults(fn=cmd_stats)
@@ -2908,3 +3125,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+#     git rm -r --cached книги -q
+# git rm -r --cached harold_data/backups -q
+# git rm -r --cached harold_data/mnist -q
+# git rm -r --cached harold_data/faces -q
