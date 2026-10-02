@@ -14,6 +14,51 @@ python harold.py stats
 Get-ChildItem harold_data\corpus\*.txt | Get-FileHash -Algorithm MD5 | Group-Object Hash | Where-Object Count -gt 1 | ForEach-Object { $_.Group.Path }
 
 
+# 1. Команды на месте?
+python harold.py -h
+
+# 2. Старый Гарольд цел? (книги, память, трофеи, лица)
+python harold.py stats
+
+# 3. Лица (сначала раз поставь OpenCV):
+pip install opencv-python
+python harold.py face-add Арсен father.jpeg
+python harold.py face-list
+python harold.py face-find групповое_фото.jpg
+
+
+
+забрать результаты обучения Гарольда
+git pull
+python harold.py stats
+python harold.py diary --chart
+
+
+
+| Команда | Что делает |
+|---|---|
+| `python harold.py stats` | Панель Гарольда: интеллект, трофеи, здоровье |
+| `python harold.py ingest книга.txt` | Покормить книгой (дубль сам отсечёт) |
+| `python harold.py feed ПАПКА` | Скормить сразу все txt из папки |
+| `python harold.py teach` | Устные уроки вопрос→ответ |
+| `python harold.py train --steps 800 --lr 1e-3` | Одна тренировка. `--lr 1e-3` держи всегда |
+| `python harold.py evolve --gens 8 --steps 800 --read 1 --lr 1e-3 --auto-grow` | Поколения подряд; `--read 1` — читает вики |
+| `python harold.py quiz` | Экзамен: помнит ли твои уроки |
+| `python harold.py chat` | Поговорить; `/save` — сохранить реплику как урок |
+| `python harold.py remember "факт"` | Вечная память о тебе |
+| `python harold.py grow --ctx 384` | Рост мозга вручную, без потери знаний |
+| `python harold.py export-web` | Собрать сайт-чат с Гарольдом |
+| `python harold.py cloud-setup` | Создать расписание для робота-няни |
+| `git init` | Включить git в папке (один раз) |
+| `git add ...` | Положить файлы в посылку |
+| `git commit -m "..."` | Запечатать посылку |
+| `git push` | Отправить в облако |
+| `git pull` | Забрать свежее из облака |
+
+
+
+
+
 
 
 

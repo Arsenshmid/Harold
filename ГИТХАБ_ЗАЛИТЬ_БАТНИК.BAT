@@ -1,3 +1,3 @@
-git add .
-git commit -m "Гарольд Арсенович"
-git push origin main
+git add .gitignore .github harold_data
+git commit -m "workflow fix and cleanup"
+git push
