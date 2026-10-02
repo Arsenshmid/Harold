@@ -4,7 +4,7 @@
   "n_heads": 4,
   "n_layers": 3,
   "block_size": 256,
-  "lr": 0.001,
+  "lr": 0.000970225,
   "clip": 1.0,
   "wd": 0.01,
   "temperature": 0.8,
@@ -2730,6 +2730,6 @@
   "какая",
   "кабинет"
  ],
- "generation": 14,
+ "generation": 16,
  "born": "2026-10-02 04:04:40"
 }
