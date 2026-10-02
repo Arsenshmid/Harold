@@ -1,0 +1,57 @@
+python harold.py init                    # рождение. Пока он «младенец»
+python harold.py chat                    # попробуй — говорит бессмыслицей
+python harold.py evolve --gens 5         # 5 поколений развития (~5-10 мин)
+python harold.py chat                    # уже узнаёт приветствия и отвечает!
+python harold.py teach                   # научи его новым фразам
+python harold.py evolve --gens 3 --read 3 --steps 800   # читает по 3 статьи Википедии за поколение
+python harold.py vision-train            # учится видеть (~98% точности на цифрах)
+python harold.py see petka.png           # показывает картинку
+python harold.py diary                   # смотришь дневник его развития
+python harold.py stats     
+
+
+#найти и удалить дубли из памяти
+Get-ChildItem harold_data\corpus\*.txt | Get-FileHash -Algorithm MD5 | Group-Object Hash | Where-Object Count -gt 1 | ForEach-Object { $_.Group.Path }
+
+
+
+
+
+# Текущий Гарольд продолжает жить — просто замените файл и работайте:
+
+# 1. Кормим SCP (твой скрипт теперь внутри, с докачкой!)
+python harold.py crawl scp --start 1 --end 500
+python harold.py crawl scp --start 1 --end 200 --suffix -ru     # русские оригиналы
+python harold.py crawl scp --base https://scp-wiki.wikidot.com --start 1 --end 300  # английский
+python harold.py crawl urls links.txt                            # любые другие сайты списком
+
+# 2. Растим БЕЗ потолка — сам почувствует плато и вырастет:
+python harold.py evolve --gens 10 --steps 800 --auto-grow --accum 2
+
+# 3. (Опционально, но рекомендую) Перерождение в BPE-мозг — максимум потенциала.
+#    Корпус, память о тебе, трофеи и дневник остаются. Мозг переучится с нуля:
+python harold.py rebirth --bpe --ctx 256 --layers 3
+python harold.py evolve --gens 15 --steps 800 --auto-grow
+
+# 4. Смотри рост:
+python harold.py stats
+python harold.py diary --chart
+python harold.py chat              # общее состояние
+
+
+
+
+
+# 1. Команды на месте?
+python harold.py -h
+
+# 2. Гарантия безопасности роста (посимвольное совпадение вывода):
+python harold.py say "Пользователь: привет" --temp 0.001 > before.txt
+python harold.py grow --depth 1
+python harold.py say "Пользователь: привет" --temp 0.001 > after.txt
+diff before.txt after.txt    # должно быть пусто
+
+# 3. По плану:
+python harold.py crawl scp --start 1 --end 500
+python harold.py evolve --gens 10 --steps 800 --read 0 --lr 1e-3 --auto-grow --accum 2
+python harold.py diary --chart

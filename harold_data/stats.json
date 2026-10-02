@@ -1,0 +1,14 @@
+{
+ "total_steps": 37300,
+ "train_seconds": 3162.8663177490234,
+ "chats": 6,
+ "messages": 17,
+ "quiz_score": 0.986,
+ "quiz_pairs": 14,
+ "growths": 1,
+ "auto_grows": 0,
+ "rollbacks": 0,
+ "ladder_idx": 0,
+ "best_val": 3.8087,
+ "rebirths": 1
+}
