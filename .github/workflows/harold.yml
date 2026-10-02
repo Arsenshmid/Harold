@@ -1,0 +1,43 @@
+﻿name: Harold cloud training
+
+on:
+  workflow_dispatch:
+    inputs:
+      gens:
+        description: 'Generations per run'
+        required: true
+        default: '3'
+      steps:
+        description: 'Steps per generation'
+        required: true
+        default: '600'
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install numpy pillow
+
+      - name: Train generations
+        run: |
+          python harold.py evolve --gens "${{ github.event.inputs.gens }}" --steps "${{ github.event.inputs.steps }}" --read 0 --lr 1e-3
+
+      - name: Save brain to repo
+        run: |
+          git config user.name "harold-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add harold_data
+          git commit -m "cloud train [skip ci]" || echo "nothing to commit"
+          git pull --rebase || true
+          git push
