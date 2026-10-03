@@ -547,21 +547,31 @@ def dialog_text():
 
 
 def dialog_ids(tok):
-    txt = dialog_text()
-    if len(txt) < 100:
+    """Диалоговая смесь: личные уроки (99) + фабрика диалогов из вики (98)."""
+    txts = []
+    for name in ("98_dialogs_wiki.txt", "99_dialogs.txt"):
+        p = os.path.join(CORPUS_DIR, name)
+        if os.path.exists(p):
+            with open(p, encoding="utf-8", errors="ignore") as f:
+                t = f.read()
+            if len(t) > 100:
+                txts.append(t)
+    if not txts:
         return None
-    return np.array(tok.encode(txt), dtype=np.int64)
+    return np.array(tok.encode("\n".join(txts)), dtype=np.int64)
 
 
 def boost_with_dialogs(main_ids, dids):
-    """Диалоги держим ~20% смеси ПРИ ЛЮБОМ размере корпуса,
-    чтобы личные уроки не тонули в миллионах символов книг."""
+    """Диалоги держим ~30% смеси при любом их объёме. Если диалоговая база
+    большая (фабрика вопросов), берём случайный срез — за поколения модель
+    увидит все вопросы, а не одни и те же."""
     if dids is None or len(dids) < 100:
         return main_ids
-    target = int(len(main_ids) * 0.2)
-    rep = int(np.clip(target // len(dids), 0, 400))
-    if rep <= 0:
-        return main_ids
+    target = int(len(main_ids) * 0.43)          # ≈30% итоговой смеси
+    if len(dids) >= target:
+        idx = np.random.permutation(len(dids))[:target]
+        return np.concatenate([main_ids, dids[idx]])
+    rep = int(np.clip(target // len(dids), 1, 20))
     return np.concatenate([main_ids] + [dids] * rep)
 
 
