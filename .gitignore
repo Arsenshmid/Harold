@@ -3,3 +3,7 @@ harold_data/backups/
 harold_data/mnist/
 harold_data/faces/
 site/
+__pycache__/
+*.tmp
+# harold_data/memory/   ← раскомментируй, если репозиторий ПУБЛИЧНЫЙ
+site/

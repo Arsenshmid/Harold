@@ -1,4 +1,4 @@
-﻿name: Harold cloud training
+name: Harold cloud training
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       gens:
         description: 'Generations per run'
         required: true
-        default: '10'
+        default: '12'
       steps:
         description: 'Steps per generation'
         required: true
