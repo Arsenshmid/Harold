@@ -2,9 +2,9 @@
  "config": {
   "d_model": 160,
   "n_heads": 4,
-  "n_layers": 3,
-  "block_size": 384,
-  "lr": 0.0009239205416838768,
+  "n_layers": 4,
+  "block_size": 768,
+  "lr": 0.00130333120053262,
   "clip": 1.0,
   "wd": 0.01,
   "temperature": 0.8,
@@ -3275,6 +3275,6 @@
   "края",
   "крайней"
  ],
- "generation": 22,
+ "generation": 34,
  "born": "2026-10-02 04:04:40"
 }
