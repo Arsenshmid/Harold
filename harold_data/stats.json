@@ -5,11 +5,11 @@
  "messages": 29,
  "quiz_score": 0.24,
  "quiz_pairs": 14,
- "growths": 2,
- "auto_grows": 1,
+ "growths": 4,
+ "auto_grows": 3,
  "rollbacks": 0,
- "ladder_idx": 2,
- "best_val": 3.6691,
+ "ladder_idx": 4,
+ "best_val": 3.6093,
  "rebirths": 2,
  "cloud_runs": 0
 }
